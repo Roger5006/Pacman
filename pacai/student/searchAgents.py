@@ -8,11 +8,14 @@ Good luck and happy searching!
 import logging
 
 from pacai.core.actions import Actions
-from pacai.core.search import heuristic
 from pacai.core.search.position import PositionSearchProblem
 from pacai.core.search.problem import SearchProblem
 from pacai.agents.base import BaseAgent
 from pacai.agents.search.base import SearchAgent
+from pacai.core.directions import Directions
+from pacai.core import distance
+from pacai.student.search import breadthFirstSearch
+
 
 class CornersProblem(SearchProblem):
     """
@@ -64,7 +67,29 @@ class CornersProblem(SearchProblem):
                 logging.warning('Warning: no food in corner ' + str(corner))
 
         # *** Your Code Here ***
-        raise NotImplementedError()
+        self.cornerStatus = [False] * 4
+
+    def isGoal(self, state):
+        return all(state[1])
+
+    def startingState(self):
+        return(self.startingPosition, tuple(self.cornerStatus))
+
+    def successorStates(self, state):
+        successors = []
+        x, y = state[0]
+        for action in Directions.CARDINAL:
+            dx, dy = Actions.directionToVector(action)
+            nextx, nexty = int(x + dx), int(y + dy)
+            hitsWall = self.walls[nextx][nexty]
+
+            if (not hitsWall):
+                nextCorners = list(state[1])
+                for i, corner in enumerate(self.corners):
+                    if (nextx, nexty) == corner:
+                        nextCorners[i] = True
+                successors.append((((nextx, nexty), tuple(nextCorners)), action, 1))
+        return successors
 
     def actionsCost(self, actions):
         """
@@ -100,7 +125,23 @@ def cornersHeuristic(state, problem):
     # walls = problem.walls  # These are the walls of the maze, as a Grid.
 
     # *** Your Code Here ***
-    return heuristic.null(state, problem)  # Default to trivial solution
+    current_position, corner_status = state
+    corners = problem.corners
+
+    unvisited_corners = []
+    for i, corner in enumerate(corners):
+        if not corner_status[i]:
+            unvisited_corners.append(corner)
+    distances = []
+    for corner in unvisited_corners:
+        distance = abs(current_position[0] - corner[0]) + abs(current_position[1] - corner[1])
+        distances.append(distance)
+
+    if not unvisited_corners:
+        return 0
+    else:
+        return max(distances)
+
 
 def foodHeuristic(state, problem):
     """
@@ -132,10 +173,26 @@ def foodHeuristic(state, problem):
     """
 
     position, foodGrid = state
-
     # *** Your Code Here ***
-    return heuristic.null(state, problem)  # Default to the null heuristic.
+    foodEat = foodGrid.asList()
+    wallBound = problem.walls.asList()
 
+    maX = 0
+    for food in foodEat:
+        cost = distance.manhattan(position, food)
+        for wall in wallBound:
+            condition1 = position[0] == food[0] == wall[0]
+            condition2 = position[1] == food[1] == wall[1]
+            condition3 = (position[0] < wall[0] < food[0])
+            condition4 = (position[0] > wall[0] > food[0])
+            if(condition3 | condition4):
+                if(condition1):
+                    cost += (distance.manhattan(position, food)) / 4
+                if(condition2):
+                    cost += (distance.manhattan(position, food)) / 4
+        if(maX < cost):
+            maX = cost
+    return maX
 class ClosestDotSearchAgent(SearchAgent):
     """
     Search for all food using a sequence of searches.
@@ -170,13 +227,10 @@ class ClosestDotSearchAgent(SearchAgent):
         """
 
         # Here are some useful elements of the startState
-        # startPosition = gameState.getPacmanPosition()
-        # food = gameState.getFood()
-        # walls = gameState.getWalls()
-        # problem = AnyFoodSearchProblem(gameState)
+        problem = AnyFoodSearchProblem(gameState)
 
         # *** Your Code Here ***
-        raise NotImplementedError()
+        return breadthFirstSearch(problem)
 
 class AnyFoodSearchProblem(PositionSearchProblem):
     """
@@ -205,6 +259,11 @@ class AnyFoodSearchProblem(PositionSearchProblem):
         # Store the food for later reference.
         self.food = gameState.getFood()
 
+    def isGoal(self, state):
+        if(state in self.food.asList()):
+            return True
+        else:
+            return False
 class ApproximateSearchAgent(BaseAgent):
     """
     Implement your contest entry here.

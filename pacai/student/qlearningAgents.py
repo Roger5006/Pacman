@@ -1,5 +1,7 @@
 from pacai.agents.learning.reinforcement import ReinforcementAgent
-from pacai.util import reflection
+from pacai.util import reflection, probability
+import random
+import sys
 
 class QLearningAgent(ReinforcementAgent):
     """
@@ -46,15 +48,34 @@ class QLearningAgent(ReinforcementAgent):
         super().__init__(index, **kwargs)
 
         # You can initialize Q-values here.
+        self.qvalues = {}
+        self.initializeqvalues()
+
+    def initializeqvalues(self):
+        self.qvalues = {}
+
+    def getAction(self, state):
+        cond = probability.flipCoin(1 - self.getEpsilon())
+        actions = self.getLegalActions(state)
+        if cond:
+            return self.getPolicy(state)
+        else:
+            ret = random.choice(actions)
+        return ret
+
+    def update(self, state, action, nextState, reward):
+        discount = self.getDiscountRate()
+        alpha = self.getAlpha()
+        best = self.getValue(nextState)
+        sample = reward + (discount * best)
+        new_qval = ((1 - alpha) * self.getQValue(state, action)) + (alpha * sample)
+        self.qvalues[(state, action)] = new_qval
 
     def getQValue(self, state, action):
-        """
-        Get the Q-Value for a `pacai.core.gamestate.AbstractGameState`
-        and `pacai.core.directions.Directions`.
-        Should return 0.0 if the (state, action) pair has never been seen.
-        """
-
-        return 0.0
+        item = (state, action)
+        if item not in self.qvalues:
+            return 0.0
+        return self.qvalues[(state, action)]
 
     def getValue(self, state):
         """
@@ -68,8 +89,16 @@ class QLearningAgent(ReinforcementAgent):
         which returns the actual best action.
         Whereas this method returns the value of the best action.
         """
+        actions = self.getLegalActions(state)
+        if len(actions) == 0:
+            return 0.0
+        best = -(sys.maxsize - 1)
+        for action in actions:
+            q_val = self.getQValue(state, action)
+            if q_val > best:
+                best = q_val
 
-        return 0.0
+        return best
 
     def getPolicy(self, state):
         """
@@ -83,8 +112,19 @@ class QLearningAgent(ReinforcementAgent):
         which returns the value of the best action.
         Whereas this method returns the best action itself.
         """
-
-        return None
+        actions = self.getLegalActions(state)
+        if len(actions) == 0:
+            return None
+        best = -(sys.maxsize - 1)
+        best_actions = []
+        for action in actions:
+            q_val = self.getQValue(state, action)
+            if q_val > best:
+                best = q_val
+                best_actions = [action]
+            elif q_val == best:
+                best_actions.append(action)
+        return random.choice(best_actions)
 
 class PacmanQAgent(QLearningAgent):
     """
@@ -134,8 +174,15 @@ class ApproximateQAgent(PacmanQAgent):
             extractor = 'pacai.core.featureExtractors.IdentityExtractor', **kwargs):
         super().__init__(index, **kwargs)
         self.featExtractor = reflection.qualifiedImport(extractor)
+        self.weights = {}
 
-        # You might want to initialize weights here.
+    def initializeWeights(self):
+        """
+        Initialize the weights dictionary.
+        """
+        # You can customize the initialization of weights based on your feature extractor.
+        # For example, you can set all weights to 0.0 initially or use random values.
+        self.weights = {}
 
     def final(self, state):
         """
@@ -149,4 +196,23 @@ class ApproximateQAgent(PacmanQAgent):
         if self.episodesSoFar == self.numTraining:
             # You might want to print your weights here for debugging.
             # *** Your Code Here ***
-            raise NotImplementedError()
+            pass
+
+    def getQValue(self, state, action):
+        q_val = 0.0
+        features = self.featExtractor.getFeatures(self, state, action)
+        for k in features:
+            weight = self.weights.get(k, 0.0)
+            feature = features[k]
+            q_val += weight * feature
+        return q_val
+
+    def update(self, state, action, nextState, reward):
+        discount = self.getDiscountRate()
+        alpha = self.getAlpha()
+        value = self.getValue(nextState)
+        q_val = self.getQValue(state, action)
+        features = self.featExtractor.getFeatures(self, state, action)
+        correction = (reward + (discount * value) - q_val)
+        for elem in features:
+            self.weights[elem] = self.weights.get(elem, 0.0) + (alpha * correction) * features[elem]
